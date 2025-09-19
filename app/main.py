@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -16,6 +18,9 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://v46fnhvrjvtlrsmnismnwhdh5y0lck
 # Inicializar chatbot
 chatbot = SportsBettingChatbot(API_BASE_URL)
 
+# Servir archivos estáticos
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # Modelos de datos
 class ChatRequest(BaseModel):
     message: str
@@ -26,6 +31,10 @@ class ChatResponse(BaseModel):
     session_id: str
 
 # Endpoints
+@app.get("/")
+async def read_root():
+    return FileResponse("static/index.html")
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
@@ -41,14 +50,6 @@ async def chat_endpoint(request: ChatRequest):
 async def health_check():
     is_connected = await chatbot.is_connected()
     return {"status": "healthy", "service": "chatbot", "api_connected": is_connected}
-
-@app.get("/")
-async def root():
-    return {
-        "message": "Sports Betting Chatbot API - Prueba Técnica",
-        "version": "1.0.0",
-        "documentation": "/docs"
-    }
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatBet - Asistente Deportivo</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://cdn.jsdelivr.net/npm/inter-ui@3.19.3/inter.min.css" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏆</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <h1>ChatBet</h1>
+                <span>🏆</span>
+            </div>
+            <p class="tagline">Tu asistente personalizado de apuestas deportivas</p>
+        </header>
+
+        <div class="chat-container">
+            <div class="chat-messages" id="chat-messages">
+                <div class="message bot-message">
+                    <div class="message-content">
+                        ¡Hola! Soy tu asistente de ChatBet. ¿En qué puedo ayudarte hoy?
+                    </div>
+                    <div class="message-time" id="current-time"></div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="input-wrapper">
+                    <input type="text" id="user-input" placeholder="Escribe tu mensaje..." autocomplete="off">
+                    <button id="send-button">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="quick-actions">
+            <p>Preguntas rápidas:</p>
+            <div class="action-buttons">
+                <button class="action-btn" data-query="¿Cuándo juega el Barcelona?">Partidos Barcelona</button>
+                <button class="action-btn" data-query="¿Qué equipos juegan hoy?">Partidos de hoy</button>
+                <button class="action-btn" data-query="¿Cuáles son las mejores apuestas?">Mejores apuestas</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

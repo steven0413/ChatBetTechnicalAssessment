@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
 from typing import Dict, List, Any, Optional
+import json
 
 class SportsAPIClient:
     def __init__(self, base_url):
@@ -16,7 +17,14 @@ class SportsAPIClient:
                     params=params or {}
                 ) as response:
                     if response.status == 200:
-                        return await response.json()
+                        # Probar si la respuesta es JSON
+                        try:
+                            return await response.json()
+                        except:
+                            # Si falla el JSON, devolver el texto
+                            text = await response.text()
+                            print(f"Respuesta no JSON de {endpoint}: {text[:200]}...")
+                            return None
                     else:
                         print(f"Error en API request: {response.status}")
                         return None
@@ -42,10 +50,32 @@ class SportsAPIClient:
             params["date"] = date
             
         result = await self.make_request("/sports/fixtures", params)
-        # Manejar caso donde la API devuelve datos vacíos
-        if result and hasattr(result, 'get') and result.get('totalResults') == 0:
+        
+        # Loggear la estructura de la respuesta para debugging
+        if result:
+            print(f"Estructura de fixtures: {json.dumps(result, indent=2)[:500]}...")
+        
+        # Manejar diferentes formatos de respuesta
+        if result is None:
             return []
-        return result
+        
+        # Si la respuesta es una lista, devolverla directamente
+        if isinstance(result, list):
+            return result
+        
+        # Si la respuesta es un diccionario, buscar la clave que contiene los fixtures
+        if isinstance(result, dict):
+            # Buscar posibles claves que contengan los fixtures
+            for key in ['fixtures', 'data', 'matches', 'events', 'games']:
+                if key in result and isinstance(result[key], list):
+                    return result[key]
+            
+            # Si no encuentra una clave específica, devolver todos los valores que sean listas
+            for value in result.values():
+                if isinstance(value, list):
+                    return value
+        
+        return []
     
     async def get_tournaments(self, sport=None):
         """Obtener torneos"""
@@ -65,7 +95,33 @@ class SportsAPIClient:
         if fixture_id:
             params["fixture_id"] = fixture_id
             
-        return await self.make_request("/sports/odds", params)
+        result = await self.make_request("/sports/odds", params)
+        
+        # Loggear la estructura de la respuesta para debugging
+        if result:
+            print(f"Estructura de odds: {json.dumps(result, indent=2)[:500]}...")
+        
+        # Manejar diferentes formatos de respuesta
+        if result is None:
+            return []
+        
+        # Si la respuesta es una lista, devolverla directamente
+        if isinstance(result, list):
+            return result
+        
+        # Si la respuesta es un diccionario, buscar la clave que contiene las odds
+        if isinstance(result, dict):
+            # Buscar posibles claves que contengan las odds
+            for key in ['odds', 'data', 'prices', 'quotes']:
+                if key in result and isinstance(result[key], list):
+                    return result[key]
+            
+            # Si no encuentra una clave específica, devolver todos los valores que sean listas
+            for value in result.values():
+                if isinstance(value, list):
+                    return value
+        
+        return []
     
     async def is_connected(self):
         """Verificar conexión con la API"""

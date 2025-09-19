@@ -61,8 +61,13 @@ class SportsBettingChatbot:
                 return self._generate_non_sports_response(query)
             
             # Obtener datos relevantes de la API (filtrados por entidades)
+            print("Obteniendo datos de la API...")
             relevant_data = await self.nlp_processor.get_relevant_data(entities)
             print(f"Datos relevantes obtenidos: {relevant_data}")
+            
+            # Si no hay datos, generar respuesta apropiada
+            if not relevant_data.get("fixtures") and not relevant_data.get("odds"):
+                return self._generate_no_data_response(entities)
             
             # Generar respuesta
             context = self.context_manager.get_context(session_id)
@@ -74,7 +79,10 @@ class SportsBettingChatbot:
             return response
         except Exception as e:
             print(f"Error processing query: {e}")
+            import traceback
+            traceback.print_exc()  # Esto mostrará el traceback completo
             return self._generate_error_response()
+
     
     async def process_betting_query(self, query, entities, session_id):
         """Procesar consultas relacionadas con apuestas"""
@@ -90,7 +98,7 @@ class SportsBettingChatbot:
         filtered_odds = self._filter_odds_by_entities(odds_data, entities)
         
         if not filtered_odds and entities.get("teams"):
-            # Intentar buscar por nombres normalizados
+            # Buscar coincidencias parciales de nombres de equipos
             normalized_teams = [self.nlp_processor.normalize_team_name(team) for team in entities["teams"]]
             filtered_odds = [o for o in odds_data if any(
                 team in o["home_team"].lower() or team in o["away_team"].lower() 
@@ -158,46 +166,46 @@ class SportsBettingChatbot:
         """Filtrar odds basado en las entidades extraídas"""
         if not odds_data or not isinstance(odds_data, list):
             return []
-    
-        filtered_odds = odds_data
-    
-        # Filtrar por equipos
-        if entities.get("teams"):
-            filtered_odds = [
-                o for o in filtered_odds 
-                if o and isinstance(o, dict) and 
-                any(team in o.get("home_team", "").lower() or team in o.get("away_team", "").lower() 
-                for team in entities["teams"])
-        ]
-    
-        # Filtrar por torneos
-        if entities.get("tournaments"):
-            filtered_odds = [
-            o for o in filtered_odds 
-            if o and isinstance(o, dict) and 
-            any(tournament in o.get("tournament", "").lower() for tournament in entities["tournaments"])
-        ]
-    
-        # Filtrar por fechas
-        if entities.get("dates"):
-            filtered_odds = [
-            o for o in filtered_odds 
-            if o and isinstance(o, dict) and 
-            any(date in o.get("date", "") for date in entities["dates"])
-        ]
-    
+        
+        filtered_odds = []
+        
+        for odds in odds_data:
+            if not isinstance(odds, dict):
+                continue
+                
+            # Buscar nombres de equipos en diferentes campos posibles
+            home_team = odds.get('home_team') or odds.get('homeTeam') or odds.get('home') or odds.get('team1') or ''
+            away_team = odds.get('away_team') or odds.get('awayTeam') or odds.get('away') or odds.get('team2') or ''
+            
+            # Convertir a minúsculas para comparación sin distinción de mayúsculas/minúsculas
+            home_team_lower = str(home_team).lower()
+            away_team_lower = str(away_team).lower()
+            
+            # Verificar si coincide con los equipos de las entidades
+            match_found = False
+            if entities.get("teams"):
+                for team in entities["teams"]:
+                    team_lower = team.lower()
+                    if team_lower in home_team_lower or team_lower in away_team_lower:
+                        match_found = True
+                        break
+            
+            # Si no hay equipos en las entidades, incluir todas las odds
+            if not entities.get("teams") or match_found:
+                filtered_odds.append(odds)
+        
         return filtered_odds
 
     def _determine_bet_selection(self, entities, odds_data):
         """Determinar la selección de apuesta basada en las entidades"""
         if not odds_data or not isinstance(odds_data, dict):
             return "home_win"  # Valor por defecto
-    
+        
         if not entities.get("bet_types"):
             return "home_win"  # Valor por defecto
-    
+        
         bet_type = entities["bet_types"][0].lower()
-    
+        
         if "draw" in bet_type or "empate" in bet_type:
             return "draw"
         elif any(word in bet_type for word in ["away", "visitante"]):

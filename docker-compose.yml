@@ -1,4 +1,4 @@
-version: '3.8'
+# Docker Compose
 
 services:
   chatbot:
@@ -9,11 +9,10 @@ services:
     environment:
       - API_BASE_URL=${API_BASE_URL}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - API_USERNAME=${API_USERNAME}
-      - API_PASSWORD=${API_PASSWORD}
       - DEBUG=${DEBUG:-False}
     env_file:
       - .env
     volumes:
       - .:/app
+      - ./static:/app/static
     restart: unless-stopped
