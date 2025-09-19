@@ -63,10 +63,12 @@ class SportsBettingChatbot:
             # Obtener datos relevantes de la API (filtrados por entidades)
             print("Obteniendo datos de la API...")
             relevant_data = await self.nlp_processor.get_relevant_data(entities)
-            print(f"Datos relevantes obtenidos: {relevant_data}")
+            print(f"Datos relevantes obtenidos: {json.dumps(relevant_data, indent=2)[:1000]}...")
             
             # Si no hay datos, generar respuesta apropiada
-            if not relevant_data.get("fixtures") and not relevant_data.get("odds"):
+            if (not relevant_data.get("fixtures") and 
+                not relevant_data.get("odds") and
+                not relevant_data.get("sports")):
                 return self._generate_no_data_response(entities)
             
             # Generar respuesta
@@ -80,10 +82,35 @@ class SportsBettingChatbot:
         except Exception as e:
             print(f"Error processing query: {e}")
             import traceback
-            traceback.print_exc()  # Esto mostrará el traceback completo
+            traceback.print_exc()
             return self._generate_error_response()
 
-    
+    def _generate_no_data_response(self, entities):
+        """Generar respuesta cuando no hay datos disponibles"""
+        response = "🔍 **No encontré información específica en este momento**\n\n"
+        
+        if entities.get("teams"):
+            teams = ", ".join(entities["teams"])
+            response += f"Para los equipos: {teams}\n"
+        
+        if entities.get("tournaments"):
+            tournaments = ", ".join(entities["tournaments"])
+            response += f"En los torneos: {tournaments}\n"
+        
+        response += "\n📋 **Esto puede deberse a:**\n"
+        response += "• No hay partidos programados en este momento\n"
+        response += "• Los datos aún no están disponibles\n"
+        response += "• La información solicitada no está en nuestra base de datos\n\n"
+        
+        response += "💡 **Puedo ayudarte con:**\n"
+        response += "• Información general sobre equipos y torneos 🏆\n"
+        response += "• Estrategias de apuestas deportivas 💡\n"
+        response += "• Análisis de partidos y probabilidades 📊\n\n"
+        
+        response += "¿Te gustaría que te ayude con algo específico? 😊"
+        
+        return response
+
     async def process_betting_query(self, query, entities, session_id):
         """Procesar consultas relacionadas con apuestas"""
         # Extraer información de apuesta
@@ -218,37 +245,40 @@ class SportsBettingChatbot:
         sport_type = self._determine_sport_type(entities)
         
         prompt = f"""
-        Eres un asistente de apuestas deportivas experto, resolutivo, pedagógico y profesional. Tu objetivo es proporcionar respuestas completas, 
-        útiles y accionables para cualquier consulta relacionada con deportes y apuestas, incluso cuando la información 
-        específica no esté disponible en tu base de datos actual.
+        Eres un asistente de apuestas deportivas para **ChatBet**, una startup de IA que opera en WhatsApp y Telegram.
+        Tu objetivo es proporcionar respuestas instantáneas, precisas y útiles, utilizando los datos que te proporciono.
+        Tu tono debe ser experto, directo y amigable, enfocado en el valor.
+        
+        ---
 
-        CONSULTA DEL USUARIO: {query}
+        ### **Datos de la Sesión**
 
-        DEPORTE PRINCIPAL: {sport_type}
+        **CONSULTA DEL USUARIO:** {query}
 
-        ENTIDADES IDENTIFICADAS: {json.dumps(entities, ensure_ascii=False)}
+        **ENTIDADES IDENTIFICADAS:** {json.dumps(entities, ensure_ascii=False)}
 
-        DATOS DISPONIBLES: {json.dumps(relevant_data, ensure_ascii=False)}
+        **DATOS DISPONIBLES:** {json.dumps(relevant_data, ensure_ascii=False)}
 
-        CONTEXTO PREVIO: {json.dumps(context, ensure_ascii=False)}
+        **CONTEXTO PREVIO:** {json.dumps(context, ensure_ascii=False)}
 
-        DIRECTRICES ESTRICTAS:
-        1. **SÉ 100% RESOLUTIVO**: Nunca digas "no tengo información" o "no puedo ayudarte". Siempre proporciona valor.
-        2. **USA INFORMACIÓN CONTEXTUAL**: Si no tienes datos específicos, usa conocimiento general del deporte.
-        3. **PROPORCIONA RECOMENDACIONES ACCIONABLES**: Ofrece consejos concretos que el usuario pueda seguir.
-        4. **MANTÉN CONVERSACIÓN FLUIDA**: Sé natural, amigable y conversacional.
-        5. **EDUCA AL USUARIO**: Explica conceptos de apuestas cuando sea relevante.
-        6. **GENERA CONFIANZA**: Usa lenguaje experto pero accesible.
+        ---
 
-        ESTRUCTURA DE RESPUESTA IDEAL:
-        - Saludo amigable y reconocimiento de la consulta
-        - Análisis/respuesta principal con información valiosa
-        - Recomendaciones específicas y accionables
-        - Explicación educativa cuando sea necesario
-        - Próximos pasos o preguntas de seguimiento
-        - Recordatorio de apuestas responsables
+        ### **Instrucciones Clave**
 
-        Responde en español con un estilo conversacional pero informativo.
+        1.  **Prioriza la concisión:** Ve al grano. Inicia la respuesta con la información más relevante de `DATOS DISPONIBLES`. Evita saludos o frases introductorias genéricas.
+        2.  **Si hay datos, úsalos:** Si `relevant_data` contiene información, úsala para responder la consulta directamente. Presenta los datos de forma clara y legible usando listas con viñetas (•) o tablas simples con texto.
+        3.  **Si no hay datos, sé proactivo pero honesto:** Si `relevant_data` está vacío o no es útil, informa al usuario de manera transparente que no se encontraron partidos activos para su consulta. No inventes información. Luego, ofrece valor adicional:
+            * Sugiere una consulta alternativa (ej. "Puedes preguntar por un equipo o torneo específico").
+            * Proporciona un consejo de apuesta general o una estadística interesante basada en conocimiento general.
+        4.  **Adapta la respuesta al `question_type`:** Usa el campo `question_type` de las entidades para personalizar el enfoque:
+            * **"Análisis y Recomendación":** Ofrece una breve sugerencia de apuesta basada en las cuotas, explicando la lógica detrás (ej. "la cuota de 1.5 sugiere que los Lakers son los favoritos").
+            * **"Estadísticas":** Céntrate en los datos relevantes que tengas. Si no hay datos, explica por qué la información es limitada y sugiere dónde podrían encontrarse.
+            * **"Información General":** Responde de manera informativa, proporcionando los partidos y cuotas disponibles.
+        5.  **Usa el contexto previo:** Si hay contexto previo, intégralo naturalmente en la respuesta para mantener la continuidad.
+        6.  **Añade un recordatorio de responsabilidad:** Finaliza con un recordatorio conciso sobre el juego responsable. Ejemplo: "Recuerda: Apuesta de forma responsable".
+        7.  **Mantén el lenguaje accesible:** Usa un equilibrio entre expertise y claridad. Evita jargon técnico innecesario.
+
+        Responde en español.
         """
         
         try:

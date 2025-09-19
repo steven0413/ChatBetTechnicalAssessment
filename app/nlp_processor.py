@@ -271,22 +271,47 @@ class NLPProcessor:
         data = {}
         
         # Obtener fixtures con filtros
-        sport = entities.get("sport") if entities.get("sport") else None
+        sport = None  # Podemos intentar determinar el deporte basado en las entidades
         tournament = entities.get("tournaments")[0] if entities.get("tournaments") else None
         date = entities.get("dates")[0] if entities.get("dates") else None
         
         data["fixtures"] = await self.api_client.get_fixtures(sport, tournament, date)
         
-        # Obtener odds con filtros
-        fixture_id = None
-        if entities.get("teams") and data["fixtures"]:
-            # Buscar fixture_id basado en equipos
-            for fixture in data["fixtures"]:
-                if any(team in fixture["home_team"].lower() or team in fixture["away_team"].lower() 
-                      for team in entities["teams"]):
-                    fixture_id = fixture["id"]
-                    break
-        
-        data["odds"] = await self.api_client.get_odds(sport, tournament, fixture_id)
+        # Si no hay fixtures, intentar obtener odds directamente
+        if not data["fixtures"]:
+            print("No se encontraron fixtures, obteniendo odds directamente...")
+            data["odds"] = await self.api_client.get_odds(sport, tournament, None)
+        else:
+            # Filtrar fixtures por equipos si hay entidades de equipos
+            if entities.get("teams"):
+                filtered_fixtures = []
+                for fixture in data["fixtures"]:
+                    # Verificar si el fixture tiene campos de equipos
+                    if isinstance(fixture, dict):
+                        # Buscar nombres de equipos en diferentes campos posibles
+                        home_team = fixture.get("home_team") or fixture.get("homeTeam") or fixture.get("home") or ""
+                        away_team = fixture.get("away_team") or fixture.get("awayTeam") or fixture.get("away") or ""
+                        
+                        # Convertir a minúsculas para comparación
+                        home_team_lower = home_team.lower()
+                        away_team_lower = away_team.lower()
+                        
+                        # Verificar si algún equipo de la entidad está en los nombres de los equipos
+                        for team in entities["teams"]:
+                            team_lower = team.lower()
+                            if team_lower in home_team_lower or team_lower in away_team_lower:
+                                filtered_fixtures.append(fixture)
+                                break
+                
+                data["fixtures"] = filtered_fixtures
+            
+            # Obtener odds con filtros
+            fixture_id = None
+            if data["fixtures"]:
+                # Intentar obtener el ID del primer fixture
+                fixture = data["fixtures"][0]
+                fixture_id = fixture.get("id") or fixture.get("fixture_id") or fixture.get("_id")
+            
+            data["odds"] = await self.api_client.get_odds(sport, tournament, fixture_id)
         
         return data
