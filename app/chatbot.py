@@ -2,10 +2,13 @@ import os
 import json
 import aiohttp
 import asyncio
+import re
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import google.generativeai as genai
 from collections import defaultdict
+from .api_client import SportsAPIClient
+from .nlp_processor import NLPProcessor
 
 # Configuración de Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -15,48 +18,6 @@ if GEMINI_API_KEY:
     model = genai.GenerativeModel('models/gemini-1.5-flash')
 else:
     model = None
-
-class SportsAPIClient:
-    def __init__(self, base_url):
-        self.base_url = base_url
-        
-    async def make_request(self, endpoint, params=None):
-        timeout = aiohttp.ClientTimeout(total=30)
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(
-                    f"{self.base_url}{endpoint}",
-                    params=params or {}
-                ) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    else:
-                        print(f"Error en API request: {response.status}")
-                        return None
-        except asyncio.TimeoutError:
-            print(f"Timeout al conectar con {endpoint}")
-            return None
-        except Exception as e:
-            print(f"Error en API request: {e}")
-            return None
-    
-    async def get_sports(self):
-        return await self.make_request("/sports")
-    
-    async def get_fixtures(self):
-        return await self.make_request("/sports/fixtures")
-    
-    async def get_odds(self):
-        return await self.make_request("/sports/odds")
-    
-    async def is_connected(self):
-        try:
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(f"{self.base_url}/sports") as response:
-                    return response.status == 200
-        except:
-            return False
 
 class ConversationContextManager:
     def __init__(self):
@@ -74,174 +35,6 @@ class ConversationContextManager:
         if session_id in self.contexts:
             del self.contexts[session_id]
 
-class NLPProcessor:
-    def __init__(self, api_client):
-        self.api_client = api_client
-        
-    async def extract_entities(self, query):
-        # Usar Gemini 1.5 Flash para análisis avanzado de entidades
-        if model:
-            try:
-                return await self._extract_entities_with_gemini(query)
-            except Exception as e:
-                print(f"Error con Gemini: {e}")
-                return self._extract_entities_fallback(query)
-        else:
-            return self._extract_entities_fallback(query)
-    
-    async def _extract_entities_with_gemini(self, query):
-        prompt = """
-        Eres un analista deportivo y de apuestas experto para ChatBet, una startup de apuestas impulsada por IA que opera a través de aplicaciones de mensajería como WhatsApp y Telegram. Tu función es procesar la solicitud del usuario para identificar y categorizar los componentes clave de su consulta. Debes extraer los datos relevantes (equipos, torneos, fechas, tipos de apuesta y el propósito de la pregunta) y devolverlos estrictamente en el formato JSON especificado a continuación. Tu respuesta debe ser solo el objeto JSON, sin texto explicativo adicional.
-        
-        ADVERTENCIA DE RESPONSABILIDAD
-        La información proporcionada es para fines de análisis y entretenimiento. Las apuestas deportivas conllevan un riesgo financiero. No hay garantía de ganancias. Los usuarios deben apostar de forma responsable y solo con dinero que puedan permitirse perder.
-
-        Proceso de Extracción y Clasificación:
-        Análisis de la Solicitud: Lee la solicitud del usuario e identifica los siguientes elementos:
-        - Equipos/Jugadores: Nombres de los equipos o jugadores mencionados.
-        - Torneos: Nombres de las ligas, copas o torneos.
-        - Fechas: Cualquier fecha o rango de fechas relevante.
-        - Tipos de Apuesta: Términos de apuestas como "Moneyline", "Spread", "Over/Under", etc.
-        - Tipo de Pregunta: Clasifica el propósito de la pregunta en categorías como:
-          * "Análisis y Recomendación" (si pide análisis de un partido y una sugerencia de apuesta).
-          * "Estadísticas" (si pide datos específicos como "goles de [jugador]" o "récord de [equipo]").
-          * "Información General" (para consultas no relacionadas con un evento o análisis específico).
-
-        Manejo de la Ausencia de Datos: Si un elemento no se menciona en la solicitud del usuario, su array correspondiente debe quedar vacío ([]) y el campo question_type debe reflejar la naturaleza de la pregunta.
-
-        Formato de Salida JSON:
-        Genera la respuesta únicamente en formato JSON, adhiriéndote estrictamente a la siguiente estructura. La salida debe ser solo el objeto JSON, sin ningún otro texto.
-
-        Devuelve SOLO un objeto JSON con esta estructura:
-        {
-            "teams": [],
-            "tournaments": [],
-            "dates": [],
-            "bet_types": [],
-            "question_type": ""
-        }
-        """
-        
-        full_prompt = f"{prompt}\n\nConsulta del usuario: {query}"
-        
-        response = model.generate_content(full_prompt)
-        response_text = response.text.strip()
-        
-        # Limpiar la respuesta para obtener solo el JSON
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-        response_text = response_text.strip()
-        
-        return json.loads(response_text)
-    
-    def _extract_entities_fallback(self, query):
-        query_lower = query.lower()
-        entities = {
-            "teams": [],
-            "tournaments": [],
-            "dates": [],
-            "bet_types": [],
-            "question_type": "general"
-        }
-        
-        # Detectar si es una pregunta no relacionada con deportes
-        non_sports_keywords = ["tiempo", "clima", "noticias", "noticia", "política", "entretenimiento", 
-                              "música", "película", "series", "tecnología", "ciencia", "historia"]
-        
-        if any(keyword in query_lower for keyword in non_sports_keywords):
-            entities["question_type"] = "non_sports"
-            return entities
-        
-        # Detectar equipos
-        team_aliases = {
-            "atletico madrid": ["atlético de madrid", "atletico", "atm", "atlético madrid", "atleti"],
-            "barcelona": ["barça", "barca", "fc barcelona"],
-            "real madrid": ["real", "rm", "realmadrid", "madrid"],
-            "lakers": ["los angeles lakers", "la lakers", "lakers"],
-            "celtics": ["boston celtics", "celtics"],
-            "bayern munich": ["bayern", "bayern múnich", "bayern munich"],
-            "psg": ["paris saint germain", "paris sg", "psg"],
-            "manchester city": ["man city", "mancity"],
-            "liverpool": ["liverpool fc", "the reds"],
-            "river plate": ["river", "riverplate"],
-            "boca juniors": ["boca", "bocajuniors", "xeneizes"],
-        }
-        
-        for team, aliases in team_aliases.items():
-            if any(alias in query_lower for alias in aliases):
-                entities["teams"].append(team)
-        
-        # Detectar torneos
-        tournament_aliases = {
-            "champions league": ["uefa champions league", "champions", "ucl"],
-            "premier league": ["premier", "epl"],
-            "liga española": ["la liga", "primera división", "laliga"],
-            "nba": ["nba", "national basketball association"],
-            "bundesliga": ["bundesliga", "liga alemana"],
-            "serie a": ["serie a", "liga italiana"],
-            "copa libertadores": ["libertadores", "copa libertadores"],
-        }
-        
-        for tournament, aliases in tournament_aliases.items():
-            if any(alias in query_lower for alias in aliases):
-                entities["tournaments"].append(tournament)
-        
-        # Detectar fechas
-        date_patterns = {
-            "hoy": datetime.now().strftime("%Y-%m-%d"),
-            "mañana": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
-            "fin de semana": self._get_next_weekend(),
-            "próxima semana": (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-        }
-        
-        for pattern, date_value in date_patterns.items():
-            if pattern in query_lower:
-                entities["dates"].append(date_value)
-        
-        # Detectar tipos de apuesta
-        bet_type_aliases = {
-            "moneyline": ["moneyline", "ganador", "winner", "victoria"],
-            "spread": ["spread", "handicap", "handicap asiático", "ventaja"],
-            "over/under": ["over/under", "total goles", "total puntos", "ambos marcan", "gg"],
-            "parlay": ["parlay", "combinada", "múltiple"],
-            "prop bet": ["prop bet", "apuesta de propuesta", "jugador específico"],
-        }
-        
-        for bet_type, aliases in bet_type_aliases.items():
-            if any(alias in query_lower for alias in aliases):
-                entities["bet_types"].append(bet_type)
-        
-        # Detectar tipo de pregunta
-        question_patterns = {
-            "análisis y recomendación": ["analiza", "recomienda", "recomendación", "predice", "pronóstico", "qué apuesta"],
-            "estadísticas": ["estadísticas", "estadisticas", "datos", "números", "récord", "record", "historial"],
-            "información general": ["quién", "qué", "cuándo", "dónde", "cómo", "información", "details"]
-        }
-        
-        for q_type, patterns in question_patterns.items():
-            if any(pattern in query_lower for pattern in patterns):
-                entities["question_type"] = q_type
-                break
-        
-        # Si no se detectó un tipo específico, usar "información general"
-        if entities["question_type"] == "general":
-            entities["question_type"] = "información general"
-        
-        return entities
-    
-    def _get_next_weekend(self):
-        today = datetime.now()
-        days_until_saturday = (5 - today.weekday()) % 7
-        return (today + timedelta(days=days_until_saturday)).strftime("%Y-%m-%d")
-    
-    async def get_relevant_data(self, entities):
-        data = {}
-        data["fixtures"] = await self.api_client.get_fixtures()
-        data["odds"] = await self.api_client.get_odds()
-        return data
-
 class SportsBettingChatbot:
     def __init__(self, api_base_url):
         self.api_client = SportsAPIClient(api_base_url)
@@ -250,18 +43,30 @@ class SportsBettingChatbot:
         
     async def process_query(self, query, session_id="default"):
         try:
+            print(f"Procesando consulta: {query}")
+            
+            # Verificar si es confirmación de apuesta
+            if query.lower() in ['sí', 'si', 'confirmar', 'sí confirmar']:
+                pending_bet = self.context_manager.get_context(session_id).get("pending_bet")
+                if pending_bet:
+                    return await self.confirm_bet(session_id)
+            
             # Extraer entidades
-            entities = await self.nlp_processor.extract_entities(query)
+            print("Extrayendo entidades...")
+            entities = await self.nlp_processor.extract_entities_enhanced(query)
+            print(f"Entidades extraídas: {entities}")
             
             # Manejar preguntas no relacionadas con deportes
             if entities.get("question_type") == "non_sports":
                 return self._generate_non_sports_response(query)
             
-            # Obtener datos relevantes de la API
+            # Obtener datos relevantes de la API (filtrados por entidades)
             relevant_data = await self.nlp_processor.get_relevant_data(entities)
+            print(f"Datos relevantes obtenidos: {relevant_data}")
             
             # Generar respuesta
-            response = await self._generate_response_with_llm(query, entities, relevant_data, {})
+            context = self.context_manager.get_context(session_id)
+            response = await self._generate_response_with_llm(query, entities, relevant_data, context)
             
             # Actualizar contexto
             self._update_context(session_id, entities, relevant_data)
@@ -270,6 +75,135 @@ class SportsBettingChatbot:
         except Exception as e:
             print(f"Error processing query: {e}")
             return self._generate_error_response()
+    
+    async def process_betting_query(self, query, entities, session_id):
+        """Procesar consultas relacionadas con apuestas"""
+        # Extraer información de apuesta
+        stake_match = re.search(r'(\$|€|£)?\s*(\d+)(?:\s*(dólares|euros|libras))?', query)
+        stake = float(stake_match.group(2)) if stake_match else None
+        
+        # Obtener odds relevantes
+        relevant_data = await self.nlp_processor.get_relevant_data(entities)
+        odds_data = relevant_data.get("odds", [])
+        
+        # Filtrar odds según entidades
+        filtered_odds = self._filter_odds_by_entities(odds_data, entities)
+        
+        if not filtered_odds and entities.get("teams"):
+            # Intentar buscar por nombres normalizados
+            normalized_teams = [self.nlp_processor.normalize_team_name(team) for team in entities["teams"]]
+            filtered_odds = [o for o in odds_data if any(
+                team in o["home_team"].lower() or team in o["away_team"].lower() 
+                for team in normalized_teams
+            )]
+        
+        if not filtered_odds:
+            return "No pude encontrar odds para los equipos o partidos mencionados."
+        
+        # Calcular posibles ganancias
+        if stake and filtered_odds:
+            selection = self._determine_bet_selection(entities, filtered_odds[0])
+            potential_winnings = stake * filtered_odds[0]["odds"].get(selection, 1)
+            
+            response = f"📊 **Análisis de Apuesta**\n\n"
+            response += f"• **Partido:** {filtered_odds[0]['home_team']} vs {filtered_odds[0]['away_team']}\n"
+            response += f"• **Cuota para {selection}:** {filtered_odds[0]['odds'].get(selection, 'N/A')}\n"
+            response += f"• **Apuesta:** ${stake}\n"
+            response += f"• **Ganancia potencial:** ${potential_winnings:.2f}\n\n"
+            response += "¿Te gustaría simular esta apuesta? (responde 'sí' para confirmar)"
+            
+            # Guardar contexto de apuesta pendiente
+            self.context_manager.update_context(session_id, "pending_bet", {
+                "fixture_id": filtered_odds[0]["id"],
+                "market_type": "moneyline",
+                "selection": selection,
+                "stake": stake,
+                "potential_winnings": potential_winnings
+            })
+            
+            return response
+        
+        return "Necesito saber cuánto quieres apostar para calcular las ganancias potenciales."
+    
+    async def confirm_bet(self, session_id):
+        """Confirmar apuesta simulada"""
+        pending_bet = self.context_manager.get_context(session_id).get("pending_bet")
+        if not pending_bet:
+            return "No hay ninguna apuesta pendiente para confirmar."
+        
+        # Simular colocación de apuesta
+        result = await self.api_client.place_bet(
+            pending_bet["fixture_id"],
+            pending_bet["market_type"],
+            pending_bet["selection"],
+            pending_bet["stake"]
+        )
+        
+        if result and result.get("success"):
+            response = "✅ **Apuesta simulada confirmada**\n\n"
+            response += f"• **ID de apuesta:** {result.get('bet_id', 'SIM-001')}\n"
+            response += f"• **Monto apostado:** ${pending_bet['stake']}\n"
+            response += f"• **Ganancia potencial:** ${pending_bet['potential_winnings']:.2f}\n"
+            response += f"• **Estado:** {result.get('status', 'confirmada')}\n\n"
+            response += "¡Buena suerte! 🍀"
+        else:
+            response = "❌ No pude procesar la apuesta. Por favor, intenta nuevamente."
+        
+        # Limpiar apuesta pendiente
+        self.context_manager.update_context(session_id, "pending_bet", None)
+        
+        return response
+    
+    def _filter_odds_by_entities(self, odds_data, entities):
+        """Filtrar odds basado en las entidades extraídas"""
+        if not odds_data or not isinstance(odds_data, list):
+            return []
+    
+        filtered_odds = odds_data
+    
+        # Filtrar por equipos
+        if entities.get("teams"):
+            filtered_odds = [
+                o for o in filtered_odds 
+                if o and isinstance(o, dict) and 
+                any(team in o.get("home_team", "").lower() or team in o.get("away_team", "").lower() 
+                for team in entities["teams"])
+        ]
+    
+        # Filtrar por torneos
+        if entities.get("tournaments"):
+            filtered_odds = [
+            o for o in filtered_odds 
+            if o and isinstance(o, dict) and 
+            any(tournament in o.get("tournament", "").lower() for tournament in entities["tournaments"])
+        ]
+    
+        # Filtrar por fechas
+        if entities.get("dates"):
+            filtered_odds = [
+            o for o in filtered_odds 
+            if o and isinstance(o, dict) and 
+            any(date in o.get("date", "") for date in entities["dates"])
+        ]
+    
+        return filtered_odds
+
+    def _determine_bet_selection(self, entities, odds_data):
+        """Determinar la selección de apuesta basada en las entidades"""
+        if not odds_data or not isinstance(odds_data, dict):
+            return "home_win"  # Valor por defecto
+    
+        if not entities.get("bet_types"):
+            return "home_win"  # Valor por defecto
+    
+        bet_type = entities["bet_types"][0].lower()
+    
+        if "draw" in bet_type or "empate" in bet_type:
+            return "draw"
+        elif any(word in bet_type for word in ["away", "visitante"]):
+            return "away_win"
+        else:
+            return "home_win"
     
     async def _generate_response_with_llm(self, query, entities, relevant_data, context):
         # Determinar el tipo de deporte principal de la consulta

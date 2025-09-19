@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import os
-from chatbot import SportsBettingChatbot
+from .chatbot import SportsBettingChatbot
 
 app = FastAPI(
     title="Sports Betting Chatbot API",
@@ -13,7 +13,7 @@ app = FastAPI(
 # Configuración desde variables de entorno
 API_BASE_URL = os.getenv("API_BASE_URL", "https://v46fnhvrjvtlrsmnismnwhdh5y0lckdl.lambda-url.us-east-1.on.aws")
 
-# Inicializar chatbot con la API real
+# Inicializar chatbot
 chatbot = SportsBettingChatbot(API_BASE_URL)
 
 # Modelos de datos

@@ -1,18 +1,18 @@
-# ChatBot para Consultas Deportivas y de Apuestas
+# ChatBet Technical Assessment
 
-Este proyecto implementa un chatbot inteligente que integra la API real de deportes y apuestas, utilizando el modelo de lenguaje Gemini de Google para ofrecer respuestas naturales y contextuales.
+## Descripción
+Chatbot inteligente para consultas deportivas y de apuestas que integra con API de deportes y utiliza Gemini AI para procesamiento de lenguaje natural.
 
-## Características
-
-- Integración con la API real de deportes y apuestas
-- Procesamiento de lenguaje natural con Gemini AI
-- Gestión de contexto conversacional
-- Implementación con FastAPI para alta disponibilidad
-- Contenedorizado con Docker para fácil despliegue
+## Tecnologías
+- Python 3.9
+- FastAPI
+- Google Gemini AI
+- Docker & Docker Compose
+- aiohttp para requests asíncronos
 
 ## Configuración
 
-1. Clona el repositorio
-2. Copia el archivo `.env.example` a `.env` y configura las variables:
-   ```bash
-   cp .env.example .env
+1. Clonar el repositorio:
+```bash
+git clone <url>
+cd ChatBetTechnicalAssessment

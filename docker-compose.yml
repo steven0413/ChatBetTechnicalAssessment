@@ -3,12 +3,17 @@ version: '3.8'
 services:
   chatbot:
     build: .
-    command: python main.py
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     environment:
       - API_BASE_URL=${API_BASE_URL}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - DEBUG=${DEBUG}
+      - API_USERNAME=${API_USERNAME}
+      - API_PASSWORD=${API_PASSWORD}
+      - DEBUG=${DEBUG:-False}
     env_file:
       - .env
+    volumes:
+      - .:/app
+    restart: unless-stopped
